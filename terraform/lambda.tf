@@ -39,3 +39,23 @@ resource "aws_lambda_function" "catalog_get" {
     security_group_ids = [aws_security_group.redis_sg.id]
   }
 }
+
+resource "aws_lambda_function" "payment" {
+  function_name = "payment"
+
+  filename         = "${path.module}/lambdas/payment-service/payment.zip"
+  source_code_hash = filebase64sha256("${path.module}/lambdas/payment-service/payment.zip")
+
+  handler = "index.handler"
+  runtime = "nodejs18.x"
+  role    = aws_iam_role.lambda_role.arn
+}
+
+resource "aws_lambda_permission" "apigw_payment" {
+  statement_id  = "AllowAPIGatewayInvokePayment"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.payment.function_name
+  principal     = "apigateway.amazonaws.com"
+
+  source_arn = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
+}
