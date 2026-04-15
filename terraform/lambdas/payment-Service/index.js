@@ -2,6 +2,7 @@ const AWS = require("aws-sdk");
 const { v4: uuidv4 } = require("uuid");
 
 const dynamo = new AWS.DynamoDB.DocumentClient();
+const sqs = new AWS.SQS();
 
 exports.handler = async (event) => {
   try {
@@ -19,7 +20,7 @@ exports.handler = async (event) => {
         ":uuid": cardId
       }
     }).promise();
-    
+
     const card = cardResult.Items[0];
 
     if (!card) {
@@ -29,8 +30,6 @@ exports.handler = async (event) => {
       };
     }
 
-
-    //Validando el estado
     if (card.status !== "ACTIVATED") {
       return {
         statusCode: 400,
@@ -38,13 +37,33 @@ exports.handler = async (event) => {
       };
     }
 
-    //Obtenemos el userId
     const userId = card.user_id;
-
-    // 🆔 Generar traceId
     const traceId = uuidv4();
+    const timestamp = Date.now();
 
-    // 🔥 (Luego aquí irá SQS)
+    await dynamo.put({
+      TableName: "payment-table",
+      Item: {
+        traceId,
+        userId,
+        cardId,
+        service,
+        status: "INITIAL",
+        timestamp
+      }
+    }).promise();
+
+    await sqs.sendMessage({
+      QueueUrl: process.env.START_PAYMENT_QUEUE_URL,
+      MessageBody: JSON.stringify({
+        userId,
+        cardId,
+        service,
+        traceId,
+        status: "INITIAL",
+        timestamp
+      })
+    }).promise();
 
     return {
       statusCode: 200,
