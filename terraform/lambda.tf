@@ -134,3 +134,15 @@ resource "aws_lambda_event_source_mapping" "transaction_trigger" {
   event_source_arn = aws_sqs_queue.transaction_queue.arn
   function_name    = aws_lambda_function.transaction.arn
 }
+
+//Get Transaction
+resource "aws_lambda_function" "payment_get" {
+  function_name = "payment-get"
+
+  filename         = "${path.module}/lambdas/get-payment/payment-get.zip"
+  source_code_hash = filebase64sha256("${path.module}/lambdas/get-payment/payment-get.zip")
+
+  handler = "index.handler"
+  runtime = "nodejs18.x"
+  role    = aws_iam_role.lambda_role.arn
+}
