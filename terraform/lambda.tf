@@ -6,10 +6,12 @@ resource "aws_lambda_function" "catalog_update" {
   handler           = "index.handler"
   runtime           = "nodejs18.x"
   role              = aws_iam_role.lambda_role.arn
+  timeout = 10
 
   environment {
     variables = {
       REDIS_HOST = aws_elasticache_cluster.redis.cache_nodes[0].address
+      BUCKET_NAME = aws_s3_bucket.catalog_bucket.bucket
     }
   }
 
@@ -27,6 +29,7 @@ resource "aws_lambda_function" "catalog_get" {
   handler           = "index.handler"
   runtime           = "nodejs18.x"
   role              = aws_iam_role.lambda_role.arn
+  timeout = 10
 
   environment {
     variables = {

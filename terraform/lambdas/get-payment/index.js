@@ -13,18 +13,27 @@ exports.handler = async (event) => {
     if (!result.Item) {
       return {
         statusCode: 404,
+        headers: {
+          "Access-Control-Allow-Origin": "*"
+        },
         body: JSON.stringify({ error: "Payment not found" })
       };
     }
 
     return {
       statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
       body: JSON.stringify(result.Item)
     };
 
   } catch (error) {
     return {
       statusCode: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
       body: JSON.stringify({
         error: "Error getting payment",
         details: error.message

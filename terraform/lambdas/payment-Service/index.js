@@ -26,14 +26,20 @@ exports.handler = async (event) => {
     if (!card) {
       return {
         statusCode: 404,
+        headers: {
+          "Access-Control-Allow-Origin": "*"
+        },
         body: JSON.stringify({ error: "Card not found" })
       };
     }
 
     if (card.status !== "ACTIVATED") {
       return {
-        statusCode: 400,
-        body: JSON.stringify({ error: "Card not active" })
+        statusCode: 404,
+        headers: {
+          "Access-Control-Allow-Origin": "*"
+        },
+        body: JSON.stringify({ error: "Card not activated" })
       };
     }
 
@@ -67,6 +73,11 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Allow-Methods": "*"
+      },
       body: JSON.stringify({
         traceId,
         message: "Payment started",
@@ -76,11 +87,11 @@ exports.handler = async (event) => {
 
   } catch (error) {
     return {
-      statusCode: 500,
-      body: JSON.stringify({
-        error: "Internal error",
-        details: error.message
-      })
+      statusCode: 404,
+      headers: {
+        "Access-Control-Allow-Origin": "*"
+      },
+      body: JSON.stringify({ error: "Internal Error" })
     };
   }
 };

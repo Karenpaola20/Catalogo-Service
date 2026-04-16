@@ -49,6 +49,14 @@ resource "aws_iam_role_policy" "lambda_dynamo_sqs" {
           "sqs:GetQueueAttributes"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject"
+        ]
+        Resource = "${aws_s3_bucket.catalog_bucket.arn}/*"
       }
     ]
   })
