@@ -1,4 +1,5 @@
 const AWS = require("aws-sdk");
+const XLSX = require("xlsx");
 const s3 = new AWS.S3();
 const { getRedis } = require("./redis");
 
@@ -16,83 +17,64 @@ exports.handler = async (event) => {
     }
 
     const fileBuffer = Buffer.from(body.file, "base64");
-    const fileContent = fileBuffer.toString("utf-8");
 
-    const fileKey = `catalog-${Date.now()}.csv`;
+    const workbook = XLSX.read(fileBuffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    const results = XLSX.utils.sheet_to_json(sheet, {
+      defval: null
+    });
+
+    const mappedResults = results.map(row => ({
+      id: row.ID ? Number(row.ID) : null,
+      categoria: row["Categoría"],
+      proveedor: row.Proveedor,
+      servicio: row.Servicio,
+      plan: row.Plan,
+      precio_mensual: row["Precio Mensual"]
+        ? Number(row["Precio Mensual"])
+        : null,
+      detalles: row["Velocidad/Detalles"],
+      estado: row.Estado
+    }));
 
     await s3.putObject({
       Bucket: process.env.BUCKET_NAME,
-      Key: fileKey,
-      Body: fileContent
+      Key: `catalog-${Date.now()}.xlsx`,
+      Body: fileBuffer,
+      ContentType:
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     }).promise();
-
-    const lines = fileContent.split("\n").filter(l => l.trim() !== "");
-
-    if (lines.length < 2) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({ error: "CSV vacío o inválido" })
-      };
-    }
-
-    const headers = lines[0].split(",");
-
-    const results = lines.slice(1).map(line => {
-      const values = line.split(",");
-      const obj = {};
-
-      headers.forEach((h, i) => {
-        obj[h.trim()] = values[i]?.trim();
-      });
-
-      obj.id = Number(obj.id);
-      obj.precio_mensual = Number(obj.precio_mensual);
-
-      return obj;
-    });
 
     redis = getRedis();
 
-    if (!redis) {
-      throw new Error("Redis not configured");
-    }
+    await new Promise((resolve, reject) => {
+      if (redis.status === "ready") return resolve();
+      redis.once("ready", resolve);
+      redis.once("error", reject);
+    });
 
-    await redis.set("catalog", JSON.stringify(results));
+    await redis.set("catalog", JSON.stringify(mappedResults));
 
-    console.log("Catálogo actualizado en Redis:", results.length);
+    console.log("Catalog saved in Redis:", mappedResults.length);
 
     return {
       statusCode: 200,
       headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "*",
-        "Access-Control-Allow-Methods": "*"
+        "Access-Control-Allow-Origin": "*"
       },
       body: JSON.stringify({
-        message: "Catalog updated successfully",
-        total: results.length,
-        file: fileKey
+        message: "Catalog updated",
+        total: mappedResults.length
       })
     };
 
-  } catch (error) {
-    console.error("Error:", error);
-
+  } catch (err) {
+    console.error(err);
     return {
       statusCode: 500,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "*",
-        "Access-Control-Allow-Methods": "*"
-      },
-      body: JSON.stringify({
-        error: "Error updating catalog",
-        details: error.message
-      })
+      body: JSON.stringify({ error: err.message })
     };
-  } finally {
-    if (redis && redis.status === "ready") {
-      await redis.quit();
-    }
   }
 };
