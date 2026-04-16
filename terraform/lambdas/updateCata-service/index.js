@@ -1,20 +1,40 @@
 const AWS = require("aws-sdk");
 const s3 = new AWS.S3();
+const { getRedis } = require("./redis");
 
 exports.handler = async (event) => {
+  let redis;
+
   try {
-    const body = JSON.parse(event.body);
+    const body = JSON.parse(event.body || "{}");
+
+    if (!body.file) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "File is required" })
+      };
+    }
 
     const fileBuffer = Buffer.from(body.file, "base64");
     const fileContent = fileBuffer.toString("utf-8");
 
+    const fileKey = `catalog-${Date.now()}.csv`;
+
     await s3.putObject({
       Bucket: process.env.BUCKET_NAME,
-      Key: `catalog-${Date.now()}.csv`,
+      Key: fileKey,
       Body: fileContent
     }).promise();
 
     const lines = fileContent.split("\n").filter(l => l.trim() !== "");
+
+    if (lines.length < 2) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({ error: "CSV vacío o inválido" })
+      };
+    }
+
     const headers = lines[0].split(",");
 
     const results = lines.slice(1).map(line => {
@@ -25,13 +45,21 @@ exports.handler = async (event) => {
         obj[h.trim()] = values[i]?.trim();
       });
 
-      obj.precio_mensual = Number(obj.precio_mensual);
       obj.id = Number(obj.id);
+      obj.precio_mensual = Number(obj.precio_mensual);
 
       return obj;
     });
 
-    console.log("CSV procesado:", results.length);
+    redis = getRedis();
+
+    if (!redis) {
+      throw new Error("Redis not configured");
+    }
+
+    await redis.set("catalog", JSON.stringify(results));
+
+    console.log("Catálogo actualizado en Redis:", results.length);
 
     return {
       statusCode: 200,
@@ -41,13 +69,14 @@ exports.handler = async (event) => {
         "Access-Control-Allow-Methods": "*"
       },
       body: JSON.stringify({
-        message: "Catalog updated",
-        total: results.length
+        message: "Catalog updated successfully",
+        total: results.length,
+        file: fileKey
       })
     };
 
   } catch (error) {
-    console.error(error);
+    console.error("Error:", error);
 
     return {
       statusCode: 500,
@@ -61,5 +90,9 @@ exports.handler = async (event) => {
         details: error.message
       })
     };
+  } finally {
+    if (redis && redis.status === "ready") {
+      await redis.quit();
+    }
   }
 };

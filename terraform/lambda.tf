@@ -6,18 +6,25 @@ resource "aws_lambda_function" "catalog_update" {
   handler           = "index.handler"
   runtime           = "nodejs18.x"
   role              = aws_iam_role.lambda_role.arn
-  timeout = 10
+  timeout = 20
 
   environment {
     variables = {
-      REDIS_HOST = aws_elasticache_cluster.redis.cache_nodes[0].address
+      REDIS_URL  = "redis://${aws_elasticache_cluster.redis.cache_nodes[0].address}:6379"
       BUCKET_NAME = aws_s3_bucket.catalog_bucket.bucket
     }
   }
 
   vpc_config {
-    subnet_ids         = data.aws_subnets.default.ids
-    security_group_ids = [aws_security_group.redis_sg.id]
+    subnet_ids         = data.aws_subnets.private.ids
+    security_group_ids = [aws_security_group.lambda_sg.id]
+  }
+
+  lifecycle {
+    ignore_changes = [
+      vpc_config[0].subnet_ids,
+      vpc_config[0].security_group_ids
+    ]
   }
 }
 
@@ -29,17 +36,24 @@ resource "aws_lambda_function" "catalog_get" {
   handler           = "index.handler"
   runtime           = "nodejs18.x"
   role              = aws_iam_role.lambda_role.arn
-  timeout = 10
+  timeout = 20
 
   environment {
     variables = {
-      REDIS_HOST = aws_elasticache_cluster.redis.cache_nodes[0].address
+      REDIS_URL = "redis://${aws_elasticache_cluster.redis.cache_nodes[0].address}:6379"
     }
   }
 
   vpc_config {
-    subnet_ids         = data.aws_subnets.default.ids
-    security_group_ids = [aws_security_group.redis_sg.id]
+    subnet_ids         = data.aws_subnets.private.ids
+    security_group_ids = [aws_security_group.lambda_sg.id]
+  }
+
+  lifecycle {
+    ignore_changes = [
+      vpc_config[0].subnet_ids,
+      vpc_config[0].security_group_ids
+    ]
   }
 }
 
@@ -80,7 +94,7 @@ resource "aws_lambda_function" "start_payment" {
   runtime = "nodejs18.x"
   role    = aws_iam_role.lambda_role.arn
 
-  timeout = 10
+  timeout = 20
 
   environment {
     variables = {
@@ -105,7 +119,7 @@ resource "aws_lambda_function" "check_balance" {
   runtime = "nodejs18.x"
   role    = aws_iam_role.lambda_role.arn
 
-  timeout = 10
+  timeout = 20
 
   environment {
     variables = {
@@ -130,7 +144,7 @@ resource "aws_lambda_function" "transaction" {
   runtime = "nodejs18.x"
   role    = aws_iam_role.lambda_role.arn
 
-  timeout = 10
+  timeout = 20
 }
 
 resource "aws_lambda_event_source_mapping" "transaction_trigger" {
@@ -148,4 +162,37 @@ resource "aws_lambda_function" "payment_get" {
   handler = "index.handler"
   runtime = "nodejs18.x"
   role    = aws_iam_role.lambda_role.arn
+}
+
+//Redis
+
+resource "aws_security_group" "lambda_sg" {
+  name   = "lambda-sg"
+  vpc_id = data.aws_vpc.default.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_security_group" "redis_sg" {
+  name   = "redis-sg"
+  vpc_id = data.aws_vpc.default.id
+
+  ingress {
+    from_port       = 6379
+    to_port         = 6379
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lambda_sg.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }
