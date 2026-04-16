@@ -5,6 +5,7 @@ const dynamo = new AWS.DynamoDB.DocumentClient();
 exports.handler = async (event) => {
   try {
     for (const record of event.Records) {
+
       const body = JSON.parse(record.body);
       const { traceId } = body;
 
@@ -24,13 +25,63 @@ exports.handler = async (event) => {
 
       const amount = payment.service?.precio_mensual || 0;
 
+      const cardResult = await dynamo.query({
+        TableName: "card-table",
+        KeyConditionExpression: "#uuid = :uuid",
+        ExpressionAttributeNames: {
+          "#uuid": "uuid"
+        },
+        ExpressionAttributeValues: {
+          ":uuid": payment.cardId
+        }
+      }).promise();
+
+      const card = cardResult.Items[0];
+
+      if (!card) {
+        console.error("Card not found:", payment.cardId);
+        continue;
+      }
+
+      const newBalance = card.balance - amount;
+
+      if (newBalance < 0) {
+        await dynamo.update({
+          TableName: "payment-table",
+          Key: { traceId },
+          UpdateExpression: "set #status = :status, #error = :error",
+          ExpressionAttributeNames: {
+            "#status": "status",
+            "#error": "error"
+          },
+          ExpressionAttributeValues: {
+            ":status": "FAILED",
+            ":error": "Saldo insuficiente"
+          }
+        }).promise();
+
+        console.log("Payment failed (negative balance):", traceId);
+        continue;
+      }
+
       console.log("Processing payment:", {
         traceId,
         amount,
-        cardId: payment.cardId
+        oldBalance: card.balance,
+        newBalance
       });
 
-      console.log("Calling external bank API...");
+      await dynamo.update({
+        TableName: "card-table",
+        Key: {
+          uuid: card.uuid,
+          createdAt: card.createdAt
+        },
+        UpdateExpression: "set balance = :b",
+        ExpressionAttributeValues: {
+          ":b": newBalance
+        }
+      }).promise();
 
       await dynamo.update({
         TableName: "payment-table",
@@ -49,7 +100,9 @@ exports.handler = async (event) => {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ message: "Transaction processed" })
+      body: JSON.stringify({
+        message: "Transaction processed"
+      })
     };
 
   } catch (error) {
